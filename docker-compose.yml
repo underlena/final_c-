@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  notification-gateway:
+    build: 
+      context: .
+      dockerfile: notification_gateway/Dockerfile
+    volumes:
+      - ./.env:/app/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - postgres
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+      - POSTGRES_HOST=postgres
+    restart: unless-stopped
+
+  email-service:
+    build: 
+      context: .
+      dockerfile: services/email_service/Dockerfile
+    volumes:
+      - ./.env:/app/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+    restart: unless-stopped
+
+  sms-service:
+    build:
+      context: .
+      dockerfile: services/sms_service/Dockerfile
+    volumes:
+      - ./.env:/app/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+    restart: unless-stopped
+
+  push-service:
+    build:
+      context: .
+      dockerfile: services/push_service/Dockerfile
+    volumes:
+      - ./.env:/app/.env
+      - ./firebase-config.json:/app/firebase-config.json
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=notifications
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  grafana_data:
